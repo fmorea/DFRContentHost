@@ -6,7 +6,6 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using System.Linq;
 using DFRContentHost.Internal;
-using DFRContentHost.Interop;
 
 namespace DFRContentHost
 {
@@ -17,12 +16,6 @@ namespace DFRContentHost
         // yet and stuff might break.
         public static void Main(string[] args)
         {
-            if (args.Length == 2 && args[0] == "--menu-probe")
-            {
-                NativeMethods.WriteRuntimeMenuSnapshot(args[1]);
-                return;
-            }
-
             var builder = AppBuilder.Configure<App>().UseReactiveUI();
 
             if (args.Contains("--self-host"))

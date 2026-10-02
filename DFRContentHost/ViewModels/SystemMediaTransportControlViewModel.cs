@@ -466,27 +466,6 @@ namespace DFRContentHost.ViewModels
                 return;
             }
 
-            var runtimeCommands = NativeMethods.GetRuntimeMenuCommands();
-            foreach (var command in runtimeCommands.Take(6))
-            {
-                var category = command.Category.Split('>')[0].Trim();
-                var categoryLabel = category.Length == 0 ? "?" : category.Substring(0, 1).ToUpperInvariant();
-                var label = categoryLabel + ":" + command.Text;
-                var width = Math.Max(48, Math.Min(96, label.Length * 7 + 12));
-                var button = new FunctionRowButtonModel(label, command.Invoke, "Segoe UI", width)
-                {
-                    ToolTipText = command.Category + " > " + command.Text +
-                        (string.IsNullOrWhiteSpace(command.Shortcut) ? string.Empty : " (" + command.Shortcut + ")")
-                };
-                ContextButtons.Add(button);
-            }
-
-            if (ContextButtons.Count > 0)
-            {
-                IsAppContextActive = true;
-                return;
-            }
-
             // ── Detect app family ──────────────────────────────────────────────
             bool IsBrowser()  => proc.Contains("chrome") || proc.Contains("msedge") || proc.Contains("edge") ||
                                  proc.Contains("firefox") || proc.Contains("brave") || proc.Contains("opera");

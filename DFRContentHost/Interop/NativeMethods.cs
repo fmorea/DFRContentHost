@@ -84,70 +84,7 @@ namespace DFRContentHost.Interop
 
         public static IList<RuntimeMenuCommand> GetRuntimeMenuCommands()
         {
-            var window = GetForegroundWindow();
-            if (window == IntPtr.Zero)
-                return new List<RuntimeMenuCommand>();
-
-            try
-            {
-                var startInfo = new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName,
-                    "--menu-probe " + window.ToInt64())
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-
-                using (var process = Process.Start(startInfo))
-                {
-                    if (process == null)
-                        return new List<RuntimeMenuCommand>();
-                    if (!process.WaitForExit(1500))
-                    {
-                        process.Kill();
-                        return new List<RuntimeMenuCommand>();
-                    }
-
-                    if (process.ExitCode != 0)
-                        return new List<RuntimeMenuCommand>();
-
-                    var commands = new List<RuntimeMenuCommand>();
-                    foreach (var line in process.StandardOutput.ReadToEnd().Split(
-                        new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-                    {
-                        var fields = line.Split('|');
-                        if (fields.Length != 3)
-                            continue;
-
-                        var category = DecodeMenuField(fields[0]);
-                        var text = DecodeMenuField(fields[1]);
-                        var shortcut = DecodeMenuField(fields[2]);
-                        var invoke = CreateMenuCommandAction(category, text, shortcut);
-                        if (invoke != null)
-                            commands.Add(new RuntimeMenuCommand(category, text, shortcut, invoke));
-                    }
-
-                    return commands;
-                }
-            }
-            catch
-            {
-                return new List<RuntimeMenuCommand>();
-            }
-        }
-
-        public static void WriteRuntimeMenuSnapshot(string windowHandle)
-        {
-            if (!long.TryParse(windowHandle, out var handleValue))
-                return;
-
-            var commands = GetRuntimeMenuCommandsForWindow(new IntPtr(handleValue));
-            foreach (var command in commands)
-            {
-                Console.WriteLine(EncodeMenuField(command.Category) + "|" +
-                    EncodeMenuField(command.Text) + "|" + EncodeMenuField(command.Shortcut));
-            }
+            return new List<RuntimeMenuCommand>();
         }
 
         private static IList<RuntimeMenuCommand> GetRuntimeMenuCommandsForWindow(IntPtr window)
