@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "DFRContentHost": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    },
+    "DFRContentHost-WindowHosted": {
+      "commandName": "Project",
+      "commandLineArgs": "--self-host",
+      "nativeDebugging": true
+    }
+  }
+}
