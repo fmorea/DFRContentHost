@@ -458,10 +458,11 @@ namespace DFRContentHost.ViewModels
 
             if (proc.Contains("notepad"))
             {
-                AddCtrl("New", 0x4E, 56);
-                AddCtrl("Open", 0x4F, 56);
-                AddCtrl("Save", 0x53, 56);
-                AddCtrl("Find", 0x46, 56);
+                AddSymbol("New", "\uE710", () => NativeMethods.SendShortcut(0x11, 0x4E));
+                AddSymbol("Open", "\uE8E5", () => NativeMethods.SendShortcut(0x11, 0x4F));
+                AddSymbol("Save", "\uE74E", () => NativeMethods.SendShortcut(0x11, 0x53));
+                AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
+                AddEditingShortcuts(false);
                 IsAppContextActive = true;
                 return;
             }
@@ -471,6 +472,7 @@ namespace DFRContentHost.ViewModels
                                  proc.Contains("firefox") || proc.Contains("brave") || proc.Contains("opera");
             bool IsExplorer() => proc.Contains("explorer");
             bool IsCode()     => proc.Contains("code") || proc.Contains("devenv") || proc.Contains("rider") || proc.Contains("idea");
+            bool IsCodeBlocks() => proc.Contains("codeblocks");
             bool IsOffice()   => proc.Contains("winword") || proc.Contains("excel") || proc.Contains("powerpnt") ||
                                  proc.Contains("onenote") || proc.Contains("notepad");
             bool IsTerminal() => proc.Contains("powershell") || proc.Contains("cmd") || proc.Contains("windowsterminal") ||
@@ -487,132 +489,147 @@ namespace DFRContentHost.ViewModels
                 if (title.Contains("youtube"))
                 {
                     // YouTube: keyboard shortcuts (all single-key, no Ctrl)
-                    AddKey("< 10s", 0x4A, 42);   // J
-                    AddKey("Play",  0x4B, 36);    // K
-                    AddKey("> 10s", 0x4C, 42);    // L
-                    AddKey("Mute",  0x4D, 36);    // M
-                    AddKey("Full",  0x46, 34);    // F
-                    AddKey("Sub",   0x43, 30);    // C (captions)
+                    AddSymbol("Seek back 10 seconds", "\uE892", () => NativeMethods.SendVirtualKey(0x4A));
+                    AddSymbol("Play or pause", "\uE768", () => NativeMethods.SendVirtualKey(0x4B));
+                    AddSymbol("Seek forward 10 seconds", "\uE893", () => NativeMethods.SendVirtualKey(0x4C));
+                    AddSymbol("Mute", "\uE74F", () => NativeMethods.SendVirtualKey(0x4D));
+                    AddSymbol("Full screen", "\uE740", () => NativeMethods.SendVirtualKey(0x46));
+                    AddSymbol("Captions", "\uE7F4", () => NativeMethods.SendVirtualKey(0x43));
                 }
                 else if (title.Contains("netflix") || title.Contains("disney") || title.Contains("prime video"))
                 {
-                    AddKey("< 10s", 0x25, 42);    // Left arrow
-                    AddKey("Play",  0x20, 36);    // Space
-                    AddKey("> 10s", 0x27, 42);    // Right arrow
-                    AddKey("Full",  0x46, 34);    // F
+                    AddSymbol("Seek back", "\uE892", () => NativeMethods.SendVirtualKey(0x25));
+                    AddSymbol("Play or pause", "\uE768", () => NativeMethods.SendVirtualKey(0x20));
+                    AddSymbol("Seek forward", "\uE893", () => NativeMethods.SendVirtualKey(0x27));
+                    AddSymbol("Full screen", "\uE740", () => NativeMethods.SendVirtualKey(0x46));
                 }
                 else if (title.Contains("github") || title.Contains("gitlab") || title.Contains("bitbucket"))
                 {
-                    AddShortcutText("Back",  0xA6, 0, 38);
-                    AddShortcutText("Fwd",   0xA7, 0, 34);
-                    AddCtrl("Find", 0x46, 36);   // Ctrl+F
-                    AddCtrl("Find File", 0x54, 52); // Ctrl+T (github search)
+                    AddSymbol("Back", "\uE72B", () => NativeMethods.SendVirtualKey(0xA6));
+                    AddSymbol("Forward", "\uE72A", () => NativeMethods.SendVirtualKey(0xA7));
+                    AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
+                    AddCtrl("Find File", 0x54, 52);
                 }
                 else if (title.Contains("google docs") || title.Contains("word online"))
                 {
-                    AddCtrl("Save",  0x53, 36);
-                    AddCtrl("Undo",  0x5A, 34);
-                    AddCtrl("Redo",  0x59, 34);
-                    AddCtrl("B",     0x42, 26);
-                    AddCtrl("I",     0x49, 22);
-                    AddCtrl("Find",  0x46, 34);
+                    AddSymbol("Save", "\uE74E", () => NativeMethods.SendShortcut(0x11, 0x53));
+                    AddSymbol("Undo", "\uE7A7", () => NativeMethods.SendShortcut(0x11, 0x5A));
+                    AddSymbol("Redo", "\uE7A6", () => NativeMethods.SendShortcut(0x11, 0x59));
+                    AddSymbol("Bold", "\uE8DD", () => NativeMethods.SendShortcut(0x11, 0x42));
+                    AddSymbol("Italic", "\uE8DB", () => NativeMethods.SendShortcut(0x11, 0x49));
+                    AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
+                    AddEditingShortcuts(false);
                 }
                 else if (title.Contains("google sheets") || title.Contains("excel online"))
                 {
-                    AddCtrl("Save",  0x53, 36);
-                    AddCtrl("Find",  0x46, 34);
-                    AddCtrl("Sum",   0x53, 38);  // placeholder
-                    AddCtrl("Bold",  0x42, 34);
+                    AddSymbol("Save", "\uE74E", () => NativeMethods.SendShortcut(0x11, 0x53));
+                    AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
+                    AddEditingShortcuts(true);
                 }
                 else if (title.Contains("gmail") || title.Contains("outlook") || title.Contains("mail"))
                 {
-                    AddKey("Compose", 0x43, 56); // C
-                    AddKey("Reply",   0x52, 40); // R
-                    AddShortcutText("Back", 0xA6, 0, 38);
-                    AddCtrl("Find",   0x46, 34);
+                    AddSymbol("Compose", "\uE710", () => NativeMethods.SendVirtualKey(0x43));
+                    AddSymbol("Reply", "\uE8CA", () => NativeMethods.SendVirtualKey(0x52));
+                    AddSymbol("Back", "\uE72B", () => NativeMethods.SendVirtualKey(0xA6));
+                    AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
                 }
                 else
                 {
                     // Generic browser
-                    AddShortcutText("Back",  0xA6, 0, 38);
-                    AddShortcutText("Fwd",   0xA7, 0, 34);
-                    AddShortcutText("F5",    0x74, 0, 26);
+                    AddSymbol("Back", "\uE72B", () => NativeMethods.SendVirtualKey(0xA6));
+                    AddSymbol("Forward", "\uE72A", () => NativeMethods.SendVirtualKey(0xA7));
+                    AddSymbol("Refresh", "\uE72C", () => NativeMethods.SendVirtualKey(0x74));
                     AddCtrl("Tab+",  0x54, 38);   // Ctrl+T
                     AddCtrl("TabX",  0x57, 38);   // Ctrl+W
-                    AddCtrl("Find",  0x46, 34);
+                    AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
                 }
+            }
+            else if (IsCodeBlocks())
+            {
+                AddSymbol("Build", "\uE768", () => NativeMethods.SendVirtualKey(0x78));
+                AddSymbol("Save", "\uE74E", () => NativeMethods.SendShortcut(0x11, 0x53));
+                AddSymbol("Undo", "\uE7A7", () => NativeMethods.SendShortcut(0x11, 0x5A));
+                AddSymbol("Redo", "\uE7A6", () => NativeMethods.SendShortcut(0x11, 0x59));
+                AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
+                AddEditingShortcuts(true);
             }
             else if (IsCode())
             {
-                AddShortcutText("Run",     0x74, 0, 34);   // F5
-                AddCtrl("Save",    0x53, 36);
-                AddCtrl("Undo",    0x5A, 34);
-                AddCtrl("Redo",    0x59, 34);
-                AddCtrl("Find",    0x46, 34);
-                AddCtrlShift("Fmt", 0x49, 32);   // Ctrl+Shift+I (format in many editors)
+                AddSymbol("Run", "\uE768", () => NativeMethods.SendVirtualKey(0x74));
+                AddSymbol("Save", "\uE74E", () => NativeMethods.SendShortcut(0x11, 0x53));
+                AddSymbol("Undo", "\uE7A7", () => NativeMethods.SendShortcut(0x11, 0x5A));
+                AddSymbol("Redo", "\uE7A6", () => NativeMethods.SendShortcut(0x11, 0x59));
+                AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
+                AddEditingShortcuts(true);
             }
             else if (IsTerminal())
             {
-                AddCtrl("Copy",   0x43, 36);
-                AddCtrl("Paste",  0x56, 38);
+                AddSymbol("Copy", "\uE8C8", () => NativeMethods.SendShortcut(0x11, 0x43));
+                AddSymbol("Paste", "\uE77F", () => NativeMethods.SendShortcut(0x11, 0x56));
                 AddCtrlShift("NewTab", 0x54, 52);
                 AddKey("Clr",  0x4C, 28);        // L (clear in bash)
-                AddKey("Up",   0x26, 24);
-                AddKey("Dn",   0x28, 24);
+                AddSymbol("Up", "\uE70E", () => NativeMethods.SendVirtualKey(0x26));
+                AddSymbol("Down", "\uE70D", () => NativeMethods.SendVirtualKey(0x28));
             }
             else if (IsExplorer())
             {
-                AddShortcutText("Back",  0xA6, 0, 38);
-                AddShortcutText("Fwd",   0xA7, 0, 34);
-                AddAltKey("Up",   0x26, 30);      // Alt+Up
-                AddShortcutText("F5",    0x74, 0, 26);
-                AddCtrl("Find",  0x46, 34);
-                AddCtrl("Copy",  0x43, 36);
-                AddCtrl("Paste", 0x56, 38);
+                AddSymbol("Back", "\uE72B", () => NativeMethods.SendVirtualKey(0xA6));
+                AddSymbol("Forward", "\uE72A", () => NativeMethods.SendVirtualKey(0xA7));
+                AddSymbol("Parent folder", "\uE74A", () => NativeMethods.SendShortcut(0x12, 0x26));
+                AddSymbol("Refresh", "\uE72C", () => NativeMethods.SendVirtualKey(0x74));
+                AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
+                AddSymbol("Cut", "\uE8C6", () => NativeMethods.SendShortcut(0x11, 0x58));
+                AddSymbol("Copy", "\uE8C8", () => NativeMethods.SendShortcut(0x11, 0x43));
+                AddSymbol("Paste", "\uE77F", () => NativeMethods.SendShortcut(0x11, 0x56));
+                AddSymbol("Select all", "\uE8B3", () => NativeMethods.SendShortcut(0x11, 0x41));
             }
             else if (IsOffice())
             {
-                AddCtrl("Save",  0x53, 36);
-                AddCtrl("Print", 0x50, 36);
-                AddCtrl("Undo",  0x5A, 34);
-                AddCtrl("Redo",  0x59, 34);
-                AddCtrlB("B",   0x42, 26);
-                AddCtrlB("I",   0x49, 22);
-                AddCtrlB("U",   0x55, 22);
-                AddCtrl("Find",  0x46, 34);
+                AddSymbol("Save", "\uE74E", () => NativeMethods.SendShortcut(0x11, 0x53));
+                AddSymbol("Print", "\uE749", () => NativeMethods.SendShortcut(0x11, 0x50));
+                AddSymbol("Undo", "\uE7A7", () => NativeMethods.SendShortcut(0x11, 0x5A));
+                AddSymbol("Redo", "\uE7A6", () => NativeMethods.SendShortcut(0x11, 0x59));
+                AddSymbol("Bold", "\uE8DD", () => NativeMethods.SendShortcut(0x11, 0x42));
+                AddSymbol("Italic", "\uE8DB", () => NativeMethods.SendShortcut(0x11, 0x49));
+                AddSymbol("Underline", "\uE8DC", () => NativeMethods.SendShortcut(0x11, 0x55));
+                AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
+                AddEditingShortcuts(false);
             }
             else if (IsMedia())
             {
                 // Media player controls via virtual keys
-                AddKey("Prev",  0xB1, 38);
-                AddKey("Play",  0xB3, 38);
-                AddKey("Next",  0xB0, 38);
-                AddKey("Mute",  0xAD, 36);
+                AddSymbol("Previous track", "\uE892", () => NativeMethods.SendVirtualKey(0xB1));
+                AddSymbol("Play or pause", "\uE768", () => NativeMethods.SendVirtualKey(0xB3));
+                AddSymbol("Next track", "\uE893", () => NativeMethods.SendVirtualKey(0xB0));
+                AddSymbol("Mute", "\uE74F", () => NativeMethods.SendVirtualKey(0xAD));
             }
             else if (IsPhoto())
             {
-                AddCtrl("Save",  0x53, 36);
-                AddCtrl("Undo",  0x5A, 34);
-                AddCtrl("Redo",  0x59, 34);
-                AddCtrl("Zoom+", 0xBB, 40);  // Ctrl+=
-                AddCtrl("Zoom-", 0xBD, 40);  // Ctrl+-
+                AddSymbol("Save", "\uE74E", () => NativeMethods.SendShortcut(0x11, 0x53));
+                AddSymbol("Undo", "\uE7A7", () => NativeMethods.SendShortcut(0x11, 0x5A));
+                AddSymbol("Redo", "\uE7A6", () => NativeMethods.SendShortcut(0x11, 0x59));
+                AddSymbol("Zoom in", "\uE8A3", () => NativeMethods.SendShortcut(0x11, 0xBB));
+                AddSymbol("Zoom out", "\uE71F", () => NativeMethods.SendShortcut(0x11, 0xBD));
                 AddCtrl("Fit",   0x30, 28);  // Ctrl+0
+                AddEditingShortcuts(false);
             }
             else if (IsTeams())
             {
-                AddCtrl("Mute",   0x4D, 38);   // Ctrl+M
+                AddSymbol("Mute", "\uE74F", () => NativeMethods.SendShortcut(0x11, 0x4D));
                 AddCtrl("Cam",    0x4F, 34);   // Ctrl+O (toggle camera many apps)
                 AddCtrl("Reply",  0x52, 36);
-                AddCtrl("Find",   0x46, 34);
+                AddSymbol("Find", "\uE721", () => NativeMethods.SendShortcut(0x11, 0x46));
+                AddEditingShortcuts(true);
             }
             else
             {
                 // Generic fallback: Undo, Redo, Copy, Paste
-                AddCtrl("Undo",  0x5A, 34);
-                AddCtrl("Redo",  0x59, 34);
-                AddCtrl("Copy",  0x43, 36);
-                AddCtrl("Paste", 0x56, 38);
-                AddCtrl("Save",  0x53, 36);
+                AddSymbol("Undo", "\uE7A7", () => NativeMethods.SendShortcut(0x11, 0x5A));
+                AddSymbol("Redo", "\uE7A6", () => NativeMethods.SendShortcut(0x11, 0x59));
+                AddSymbol("Copy", "\uE8C8", () => NativeMethods.SendShortcut(0x11, 0x43));
+                AddSymbol("Paste", "\uE77F", () => NativeMethods.SendShortcut(0x11, 0x56));
+                AddSymbol("Save", "\uE74E", () => NativeMethods.SendShortcut(0x11, 0x53));
+                AddEditingShortcuts(true);
             }
 
             IsAppContextActive = ContextButtons.Count > 0;
@@ -623,6 +640,24 @@ namespace DFRContentHost.ViewModels
         // Single VK press (no modifier)
         private void AddKey(string label, ushort vk, double w = 34)
             => ContextButtons.Add(new FunctionRowButtonModel(label, () => NativeMethods.SendVirtualKey(vk), "Segoe UI", w));
+
+        private void AddSymbol(string label, string glyph, Action action)
+        {
+            ContextButtons.Add(new FunctionRowButtonModel(glyph, action, "Segoe MDL2 Assets", 30));
+        }
+
+        private void AddEditingShortcuts(bool includeFormatting)
+        {
+            AddSymbol("Copy", "\uE8C8", () => NativeMethods.SendShortcut(0x11, 0x43));
+            AddSymbol("Cut", "\uE8C6", () => NativeMethods.SendShortcut(0x11, 0x58));
+            AddSymbol("Paste", "\uE77F", () => NativeMethods.SendShortcut(0x11, 0x56));
+            AddSymbol("Select all", "\uE8B3", () => NativeMethods.SendShortcut(0x11, 0x41));
+            if (includeFormatting)
+            {
+                AddSymbol("Bold", "\uE8DD", () => NativeMethods.SendShortcut(0x11, 0x42));
+                AddSymbol("Italic", "\uE8DB", () => NativeMethods.SendShortcut(0x11, 0x49));
+            }
+        }
 
         // Single VK press via SendVirtualKey (legacy — unchanged from before)
         private void AddShortcutText(string label, ushort vk, ushort _, double w = 34)

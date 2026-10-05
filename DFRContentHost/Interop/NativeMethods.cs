@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -9,6 +11,15 @@ namespace DFRContentHost.Interop
 {
     public static class NativeMethods
     {
+        private static readonly object InputQueueLock = new object();
+        private static readonly Queue<string> InputQueue = new Queue<string>();
+        private static readonly AutoResetEvent InputQueueSignal = new AutoResetEvent(false);
+        private static readonly string InputPipeName = "DFRContentHost.Input." + Guid.NewGuid().ToString("N");
+        private static Thread _inputQueueThread;
+        private static Process _inputWorkerProcess;
+        private static NamedPipeClientStream _inputWorkerPipe;
+        private static StreamWriter _inputWorkerWriter;
+
         [StructLayout(LayoutKind.Sequential)]
         private struct SystemPowerStatus
         {
@@ -351,29 +362,221 @@ namespace DFRContentHost.Interop
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint SendInput(uint nInputs, [MarshalAs(UnmanagedType.LPArray), In] INPUT[] pInputs, int cbSize);
 
+        public static void RunInputWorker(string[] args)
+        {
+            try
+            {
+                if (args == null || args.Length == 0)
+                    return;
+
+                INPUT[] inputs;
+                switch (args[0])
+                {
+                    case "char":
+                        if (args.Length != 2 || !ushort.TryParse(args[1], out var character)) return;
+                        inputs = CreateUnicodeInputs((char)character);
+                        break;
+                    case "key":
+                        if (args.Length != 2 || !ushort.TryParse(args[1], out var key)) return;
+                        inputs = CreateKeyInputs(key, false);
+                        break;
+                    case "win":
+                        inputs = CreateKeyInputs(0x5B, true);
+                        break;
+                    case "chord":
+                        if (args.Length != 3 || !ushort.TryParse(args[2], out key)) return;
+                        var modifiers = Array.ConvertAll(args[1].Split(','), value => ushort.Parse(value));
+                        if (modifiers.Length == 0 || modifiers.Length > 4) return;
+                        inputs = CreateChordInputs(modifiers, key);
+                        break;
+                    default:
+                        return;
+                }
+
+                SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+            }
+            catch
+            {
+            }
+        }
+
+        public static void RunInputWorkerServer(string pipeName)
+        {
+            try
+            {
+                using (var pipe = new NamedPipeServerStream(pipeName, PipeDirection.In, 1,
+                    PipeTransmissionMode.Byte, PipeOptions.None))
+                using (var reader = new StreamReader(pipe, Encoding.UTF8))
+                {
+                    pipe.WaitForConnection();
+                    string command;
+                    while ((command = reader.ReadLine()) != null)
+                        RunInputWorker(command.Split(' '));
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void QueueInputCommand(string command)
+        {
+            lock (InputQueueLock)
+            {
+                InputQueue.Enqueue(command);
+                if (_inputQueueThread == null)
+                {
+                    _inputQueueThread = new Thread(ProcessInputQueue) { IsBackground = true };
+                    _inputQueueThread.Start();
+                }
+            }
+
+            InputQueueSignal.Set();
+        }
+
+        private static void ProcessInputQueue()
+        {
+            while (true)
+            {
+                InputQueueSignal.WaitOne();
+                while (true)
+                {
+                    string command;
+                    lock (InputQueueLock)
+                    {
+                        if (InputQueue.Count == 0)
+                            break;
+                        command = InputQueue.Dequeue();
+                    }
+
+                    try
+                    {
+                        SendInputCommandToWorker(command);
+                    }
+                    catch
+                    {
+                        ResetInputWorker();
+                    }
+                }
+            }
+        }
+
+        private static void SendInputCommandToWorker(string command)
+        {
+            if (_inputWorkerProcess == null || _inputWorkerProcess.HasExited ||
+                _inputWorkerPipe == null || !_inputWorkerPipe.IsConnected)
+                StartInputWorker();
+
+            _inputWorkerWriter.WriteLine(command);
+        }
+
+        private static void StartInputWorker()
+        {
+            ResetInputWorker();
+            var runtimeDirectory = Path.GetDirectoryName(typeof(object).Assembly.Location);
+            var dotnetPath = Path.GetFullPath(Path.Combine(runtimeDirectory, "..", "..", "..", "dotnet.exe"));
+            if (!File.Exists(dotnetPath))
+                dotnetPath = "dotnet";
+
+            var assemblyPath = typeof(NativeMethods).Assembly.Location;
+            var startInfo = new ProcessStartInfo(dotnetPath,
+                "\"" + assemblyPath + "\" --input-worker-server " + InputPipeName)
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WorkingDirectory = AppContext.BaseDirectory
+            };
+
+            _inputWorkerProcess = Process.Start(startInfo);
+            if (_inputWorkerProcess == null)
+                throw new InvalidOperationException("Could not start keyboard input worker.");
+
+            _inputWorkerPipe = new NamedPipeClientStream(".", InputPipeName, PipeDirection.Out);
+            _inputWorkerPipe.Connect(5000);
+            _inputWorkerWriter = new StreamWriter(_inputWorkerPipe, new UTF8Encoding(false))
+            {
+                AutoFlush = true
+            };
+        }
+
+        private static void ResetInputWorker()
+        {
+            try { _inputWorkerWriter?.Dispose(); } catch { }
+            try { _inputWorkerPipe?.Dispose(); } catch { }
+            try
+            {
+                if (_inputWorkerProcess != null)
+                {
+                    if (!_inputWorkerProcess.HasExited)
+                        _inputWorkerProcess.Kill();
+                    _inputWorkerProcess.Dispose();
+                }
+            }
+            catch { }
+
+            _inputWorkerWriter = null;
+            _inputWorkerPipe = null;
+            _inputWorkerProcess = null;
+        }
+
+        private static INPUT[] CreateUnicodeInputs(char character)
+        {
+            var inputs = new INPUT[2];
+            inputs[0].type = INPUT_KEYBOARD;
+            inputs[0].U.ki.wScan = character;
+            inputs[0].U.ki.dwFlags = KEYEVENTF_UNICODE;
+            inputs[1].type = INPUT_KEYBOARD;
+            inputs[1].U.ki.wScan = character;
+            inputs[1].U.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+            return inputs;
+        }
+
+        private static INPUT[] CreateKeyInputs(ushort key, bool extended)
+        {
+            var keyDownFlags = extended ? KEYEVENTF_EXTENDEDKEY : 0;
+            var inputs = new INPUT[2];
+            inputs[0].type = INPUT_KEYBOARD;
+            inputs[0].U.ki.wVk = key;
+            inputs[0].U.ki.dwFlags = keyDownFlags;
+            inputs[1].type = INPUT_KEYBOARD;
+            inputs[1].U.ki.wVk = key;
+            inputs[1].U.ki.dwFlags = keyDownFlags | KEYEVENTF_KEYUP;
+            return inputs;
+        }
+
+        private static INPUT[] CreateChordInputs(ushort[] modifiers, ushort key)
+        {
+            var inputs = new INPUT[(modifiers.Length + 1) * 2];
+            for (var index = 0; index < modifiers.Length; index++)
+            {
+                inputs[index].type = INPUT_KEYBOARD;
+                inputs[index].U.ki.wVk = modifiers[index];
+            }
+
+            inputs[modifiers.Length].type = INPUT_KEYBOARD;
+            inputs[modifiers.Length].U.ki.wVk = key;
+            inputs[modifiers.Length + 1].type = INPUT_KEYBOARD;
+            inputs[modifiers.Length + 1].U.ki.wVk = key;
+            inputs[modifiers.Length + 1].U.ki.dwFlags = KEYEVENTF_KEYUP;
+
+            for (var index = 0; index < modifiers.Length; index++)
+            {
+                var releaseIndex = modifiers.Length + 2 + index;
+                inputs[releaseIndex].type = INPUT_KEYBOARD;
+                inputs[releaseIndex].U.ki.wVk = modifiers[modifiers.Length - 1 - index];
+                inputs[releaseIndex].U.ki.dwFlags = KEYEVENTF_KEYUP;
+            }
+
+            return inputs;
+        }
+
         /// <summary>
         /// Sends a Unicode character directly to the active foreground window.
-        /// Works for any character (A-Z, a-z, numbers, symbols, accents) independent of keyboard layout.
+        /// Works for any character independent of keyboard layout.
         /// </summary>
         public static void SendChar(char c)
         {
-            ThreadPool.QueueUserWorkItem(_ =>
-            {
-                try
-                {
-                    INPUT[] inputs = new INPUT[2];
-                    inputs[0].type = INPUT_KEYBOARD;
-                    inputs[0].U.ki.wScan = (ushort)c;
-                    inputs[0].U.ki.dwFlags = KEYEVENTF_UNICODE;
-
-                    inputs[1].type = INPUT_KEYBOARD;
-                    inputs[1].U.ki.wScan = (ushort)c;
-                    inputs[1].U.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-
-                    SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
-                }
-                catch { }
-            });
+            QueueInputCommand("char " + (ushort)c);
         }
 
         /// <summary>
@@ -381,22 +584,7 @@ namespace DFRContentHost.Interop
         /// </summary>
         public static void SendVirtualKey(ushort vk)
         {
-            ThreadPool.QueueUserWorkItem(_ =>
-            {
-                try
-                {
-                    INPUT[] inputs = new INPUT[2];
-                    inputs[0].type = INPUT_KEYBOARD;
-                    inputs[0].U.ki.wVk = vk;
-
-                    inputs[1].type = INPUT_KEYBOARD;
-                    inputs[1].U.ki.wVk = vk;
-                    inputs[1].U.ki.dwFlags = KEYEVENTF_KEYUP;
-
-                    SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
-                }
-                catch { }
-            });
+            QueueInputCommand("key " + vk);
         }
 
         /// <summary>
@@ -404,24 +592,7 @@ namespace DFRContentHost.Interop
         /// </summary>
         public static void SendWinKey()
         {
-            ThreadPool.QueueUserWorkItem(_ =>
-            {
-                try
-                {
-                    const ushort VK_LWIN = 0x5B;
-                    INPUT[] inputs = new INPUT[2];
-                    inputs[0].type = INPUT_KEYBOARD;
-                    inputs[0].U.ki.wVk = VK_LWIN;
-                    inputs[0].U.ki.dwFlags = KEYEVENTF_EXTENDEDKEY;
-
-                    inputs[1].type = INPUT_KEYBOARD;
-                    inputs[1].U.ki.wVk = VK_LWIN;
-                    inputs[1].U.ki.dwFlags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
-
-                    SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
-                }
-                catch { }
-            });
+            QueueInputCommand("win");
         }
 
         /// <summary>
@@ -429,20 +600,7 @@ namespace DFRContentHost.Interop
         /// </summary>
         public static void SendShortcut(ushort modifierVk, ushort keyVk)
         {
-            ThreadPool.QueueUserWorkItem(_ =>
-            {
-                try
-                {
-                    INPUT[] inputs = new INPUT[4];
-                    inputs[0].type = INPUT_KEYBOARD; inputs[0].U.ki.wVk = modifierVk;
-                    inputs[1].type = INPUT_KEYBOARD; inputs[1].U.ki.wVk = keyVk;
-                    inputs[2].type = INPUT_KEYBOARD; inputs[2].U.ki.wVk = keyVk; inputs[2].U.ki.dwFlags = KEYEVENTF_KEYUP;
-                    inputs[3].type = INPUT_KEYBOARD; inputs[3].U.ki.wVk = modifierVk; inputs[3].U.ki.dwFlags = KEYEVENTF_KEYUP;
-
-                    SendInput(4, inputs, Marshal.SizeOf(typeof(INPUT)));
-                }
-                catch { }
-            });
+            QueueInputCommand("chord " + modifierVk + " " + keyVk);
         }
 
         /// <summary>
@@ -450,36 +608,10 @@ namespace DFRContentHost.Interop
         /// </summary>
         public static void SendChord(ushort[] modifiers, ushort keyVk)
         {
-            ThreadPool.QueueUserWorkItem(_ =>
-            {
-                try
-                {
-                    int n = modifiers.Length;
-                    INPUT[] inputs = new INPUT[(n + 1) * 2];
-                    // Press all modifiers
-                    for (int i = 0; i < n; i++)
-                    {
-                        inputs[i].type = INPUT_KEYBOARD;
-                        inputs[i].U.ki.wVk = modifiers[i];
-                    }
-                    // Press the key
-                    inputs[n].type = INPUT_KEYBOARD;
-                    inputs[n].U.ki.wVk = keyVk;
-                    // Release the key
-                    inputs[n + 1].type = INPUT_KEYBOARD;
-                    inputs[n + 1].U.ki.wVk = keyVk;
-                    inputs[n + 1].U.ki.dwFlags = KEYEVENTF_KEYUP;
-                    // Release modifiers in reverse
-                    for (int i = 0; i < n; i++)
-                    {
-                        inputs[n + 2 + i].type = INPUT_KEYBOARD;
-                        inputs[n + 2 + i].U.ki.wVk = modifiers[n - 1 - i];
-                        inputs[n + 2 + i].U.ki.dwFlags = KEYEVENTF_KEYUP;
-                    }
-                    SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
-                }
-                catch { }
-            });
+            if (modifiers == null || modifiers.Length == 0 || modifiers.Length > 4)
+                return;
+
+            QueueInputCommand("chord " + string.Join(",", modifiers) + " " + keyVk);
         }
 
         #endregion

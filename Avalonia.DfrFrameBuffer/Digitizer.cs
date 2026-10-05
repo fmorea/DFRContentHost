@@ -22,9 +22,8 @@ namespace Avalonia.DfrFrameBuffer
 
         private HidDeviceInputReceiver _hidDeviceInputReceiver;
         private DeviceItemInputParser _hiddeviceInputParser;
+        private readonly object _parserLock = new object();
 
-        // Pre-allocated slots
-        private TouchReport[] _prevReports;
         private int _prevTappedSlotIndex;
 
         public event Action<RawInputEventArgs> Event;
@@ -38,11 +37,6 @@ namespace Avalonia.DfrFrameBuffer
             _height = physicalHeight * _scale;
 
             _prevTappedSlotIndex = -1;
-            _prevReports = new TouchReport[11];
-            for (int i = 0; i < 11; i++)
-            {
-                _prevReports[i] = new TouchReport(0, 32767, false);
-            }
 
             // Discover DFR digitizer device
             _digitizer = DeviceList.Local.GetHidDeviceOrNull(0x05ac, 0x8302);
@@ -74,106 +68,102 @@ namespace Avalonia.DfrFrameBuffer
             var inputReportBuffer = new byte[_digitizer.GetMaxInputReportLength()];
             while (_hidDeviceInputReceiver.TryRead(inputReportBuffer, 0, out Report report))
             {
-                // Parse the report if possible.
-                // This will return false if (for example) the report applies to a different DeviceItem.
-                if (_hiddeviceInputParser.TryParseReport(inputReportBuffer, 0, report))
+                TouchReport[] currentReports;
+                lock (_parserLock)
                 {
-                    BridgeFrameBufferPlatform.Threading.Send(() => ProcessEvent());
+                    // Snapshot parser values before another HID report can overwrite them.
+                    if (!_hiddeviceInputParser.TryParseReport(inputReportBuffer, 0, report) ||
+                        !_hiddeviceInputParser.HasChanged)
+                        continue;
+
+                    currentReports = ReadCurrentReports();
                 }
+
+                BridgeFrameBufferPlatform.Threading.Send(() => ProcessEvent(currentReports));
             }
         }
 
-        private void ProcessEvent()
+        private TouchReport[] ReadCurrentReports()
         {
-            if (_hiddeviceInputParser.HasChanged)
+            var reports = new TouchReport[11];
+            for (var slot = 0; slot < reports.Length; slot++)
+                reports[slot] = new TouchReport(0, 32767, false);
+
+            var slotIndex = -1;
+            for (var index = 0; index < _hiddeviceInputParser.ValueCount; index++)
             {
-                int j = -1;
-                TouchReport[] currentReports = new TouchReport[11];
+                var data = _hiddeviceInputParser.GetValue(index);
+                if (data.Usages.FirstOrDefault() != VendorUsage.FingerIdentifier)
+                    continue;
 
-                for (int i = 0; i < _hiddeviceInputParser.ValueCount; i++)
+                slotIndex++;
+                if (slotIndex >= reports.Length || index + 4 >= _hiddeviceInputParser.ValueCount)
+                    break;
+
+                var fingerTapData = _hiddeviceInputParser.GetValue(index + 1);
+                var xData = _hiddeviceInputParser.GetValue(index + 3);
+                reports[slotIndex] = new TouchReport(xData.GetPhysicalValue(),
+                    xData.DataItem.PhysicalMaximum, fingerTapData.GetPhysicalValue() != 0);
+            }
+
+            return reports;
+        }
+
+        private void ProcessEvent(TouchReport[] currentReports)
+        {
+            if (currentReports == null || currentReports.Length != 11)
+                return;
+
+            // Check if need to raise touch leave event for prev slot
+            if (_prevTappedSlotIndex >= 0)
+            {
+                var previousReport = currentReports[_prevTappedSlotIndex];
+                var scaledX = previousReport.GetXInPercentage() * _width;
+
+                if (!previousReport.FingerStatus)
                 {
-                    var data = _hiddeviceInputParser.GetValue(i);
-                    if (data.Usages.FirstOrDefault() == VendorUsage.FingerIdentifier)
-                    {
-                        j++;
-                    }
-                    else
-                    {
+                    Event?.Invoke(new RawMouseEventArgs(
+                        BridgeFrameBufferPlatform.MouseDevice,
+                        BridgeFrameBufferPlatform.Timestamp,
+                        BridgeFrameBufferPlatform.TopLevel.InputRoot,
+                        RawMouseEventType.LeftButtonUp,
+                        new Point(scaledX, _height / 2),
+                        default));
+
+                    _prevTappedSlotIndex = -1;
+                }
+                else if (BridgeFrameBufferPlatform.MouseDevice.Captured != null)
+                {
+                    Event?.Invoke(new RawMouseEventArgs(
+                        BridgeFrameBufferPlatform.MouseDevice,
+                        BridgeFrameBufferPlatform.Timestamp,
+                        BridgeFrameBufferPlatform.TopLevel.InputRoot,
+                        RawMouseEventType.Move,
+                        new Point(scaledX, _height / 2),
+                        InputModifiers.LeftMouseButton));
+                }
+            }
+
+            // Can raise new tap event
+            if (_prevTappedSlotIndex == -1)
+            {
+                for (var slot = 0; slot < currentReports.Length; slot++)
+                {
+                    if (!currentReports[slot].FingerStatus)
                         continue;
-                    }
 
-                    // Only 11 slots are statically allocated
-                    if (j >= 11) break;
+                    var scaledX = currentReports[slot].GetXInPercentage() * _width;
+                    Event?.Invoke(new RawMouseEventArgs(
+                        BridgeFrameBufferPlatform.MouseDevice,
+                        BridgeFrameBufferPlatform.Timestamp,
+                        BridgeFrameBufferPlatform.TopLevel.InputRoot,
+                        RawMouseEventType.LeftButtonDown,
+                        new Point(scaledX, _height / 2),
+                        default));
 
-                    // This is defined by the descriptor, we just take the assumption
-                    var fingerTapData1 = _hiddeviceInputParser.GetValue(i + 1);
-                    var fingerTapData2 = _hiddeviceInputParser.GetValue(i + 2);
-                    var xData = _hiddeviceInputParser.GetValue(i + 3);
-                    // Y is discarded but being read anyway
-                    var yData = _hiddeviceInputParser.GetValue(i + 4);
-
-                    // Register this
-                    currentReports[j] = new TouchReport(xData.GetPhysicalValue(), 
-                        xData.DataItem.PhysicalMaximum, fingerTapData1.GetPhysicalValue() != 0);
+                    _prevTappedSlotIndex = slot;
+                    break;
                 }
-
-                // Check if need to raise touch leave event for prev slot
-                if (_prevTappedSlotIndex >= 0)
-                {
-                    var scaledX = currentReports[_prevTappedSlotIndex].GetXInPercentage() * _width;
-
-                    if (!currentReports[_prevTappedSlotIndex].FingerStatus)
-                    {
-                        Event?.Invoke(new RawMouseEventArgs(
-                            BridgeFrameBufferPlatform.MouseDevice,
-                            BridgeFrameBufferPlatform.Timestamp,
-                            BridgeFrameBufferPlatform.TopLevel.InputRoot,
-                            RawMouseEventType.LeftButtonUp,
-                            new Point(scaledX, _height / 2),
-                            default));
-
-                        _prevTappedSlotIndex = -1;
-                    }
-                    else
-                    {
-                        // Update cache, raise move event and complete routine
-                        if (BridgeFrameBufferPlatform.MouseDevice.Captured != null)
-                        {
-                            Event?.Invoke(new RawMouseEventArgs(
-                                BridgeFrameBufferPlatform.MouseDevice,
-                                BridgeFrameBufferPlatform.Timestamp,
-                                BridgeFrameBufferPlatform.TopLevel.InputRoot,
-                                RawMouseEventType.Move,
-                                new Point(scaledX, _height / 2),
-                                InputModifiers.LeftMouseButton));
-                        }
-                    }
-                }
-
-                // Can raise new tap event
-                if (_prevTappedSlotIndex == -1)
-                {
-                    for (int i = 0; i < 11; i++)
-                    {
-                        if (currentReports[i].FingerStatus)
-                        {
-                            var scaledX = currentReports[i].GetXInPercentage() * _width;
-                            Event?.Invoke(new RawMouseEventArgs(
-                                BridgeFrameBufferPlatform.MouseDevice,
-                                BridgeFrameBufferPlatform.Timestamp,
-                                BridgeFrameBufferPlatform.TopLevel.InputRoot,
-                                RawMouseEventType.LeftButtonDown,
-                                new Point(scaledX, _height / 2),
-                               default));
-
-                            _prevTappedSlotIndex = i;
-                            break;
-                        }
-                    }
-                }
-
-                // Update cache
-                _prevReports = currentReports;
             }
         }
     }

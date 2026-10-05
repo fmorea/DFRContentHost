@@ -1,10 +1,8 @@
 using Avalonia.Media;
-using Avalonia.Threading;
+using DFRContentHost.Interop;
 using ReactiveUI;
 using System;
 using System.Reactive;
-using System.Threading;
-using WindowsInput;
 using WindowsInput.Native;
 
 namespace DFRContentHost.Models
@@ -18,7 +16,6 @@ namespace DFRContentHost.Models
         private string _keyContent;
         private VirtualKeyCode _keyCode;
         private Action _action;
-        private string _toolTipText;
         private FontFamily _fontFamily = new FontFamily("Segoe UI");
         private double _width = 34;
         private bool _isActive;
@@ -28,12 +25,6 @@ namespace DFRContentHost.Models
         {
             get => _keyContent;
             set => this.RaiseAndSetIfChanged(ref _keyContent, value);
-        }
-
-        public string ToolTipText
-        {
-            get => _toolTipText;
-            set => this.RaiseAndSetIfChanged(ref _toolTipText, value);
         }
 
         public VirtualKeyCode Code
@@ -88,20 +79,7 @@ namespace DFRContentHost.Models
                     return;
                 }
 
-                ThreadPool.QueueUserWorkItem(_ =>
-                {
-                    try
-                    {
-                        var sim = new InputSimulator();
-                        sim.Keyboard.KeyDown(_keyCode);
-                        Thread.Sleep(30);
-                        sim.Keyboard.KeyUp(_keyCode);
-                    }
-                    catch (Exception)
-                    {
-                        // ULPI issue
-                    }
-                });
+                NativeMethods.SendVirtualKey((ushort)_keyCode);
             }
             catch (Exception)
             {
