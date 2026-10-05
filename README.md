@@ -50,5 +50,5 @@ bin\DFRNativePrototype.exe --preview
 
 # License
 
-Copyright (c) Bingxing Wang. All rights reserved.
+Copyright (c) Fernando Morea. All rights reserved.
 Licensed under the [MIT License](LICENSE.txt).
